@@ -1,10 +1,21 @@
 from fastapi import APIRouter
+
+from src.service_layer.tensor_flow import TensorFlow
+from pydantic import BaseModel
+
 router = APIRouter(
     prefix="/train",
     responses={404: {"Description": "Not found"}},
 )
 
+class Item(BaseModel):
+    item: str
 
-@router.get("/")
-async def index() -> str:
-    return "HOLA!"
+@router.post("/")
+async def index(item: Item) -> str:
+    val:str = item.item
+    tensor : TensorFlow = TensorFlow()
+    tensor.init(image_64=val)
+    return "OK!"
+
+

@@ -1,108 +1,141 @@
+import base64
+import pathlib
+from io import BytesIO
+
+import PIL
+import tensorflow as tf
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+from keras import Sequential
+from tensorflow import keras
+from tensorflow.keras import layers
+from tensorflow.lite.python.schema_py_generated import np
+from struct import unpack
 import os
 
-import matplotlib.pyplot as plt
-import tensorflow as tf
-from tensorflow.keras.layers import Dense, Conv2D, Flatten, MaxPooling2D
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-
-
 class TensorFlow:
-    PATH = os.path.join('/content/drive/My Drive/Deep_Learning_Colab/Covid19TensorFlowClassifier', 'ImagesDataset')
-    train_dir = os.path.join(PATH, 'train')
-    validation_dir = os.path.join(PATH, 'validation')
-    IMG_HEIGHT = 150
-    IMG_WIDTH = 150
-    epochs = 8
 
-    def __init__(self):
-        total_train, total_val = self.load_image_dataset()
-        train_data_gen, batch_size, sample_training_images, val_data_gen = self.image_pre_processing()
-        self.plot_images(sample_training_images[:5])
-        model = self.setup_convolutional_neural_network()
-        self.train_convolutional_neural_network(model, batch_size, train_data_gen, total_train, val_data_gen, total_val)
+    dataset_url = "https://dmcorrales.com/backup.tgz"
+    data_dir = tf.keras.utils.get_file('dataset', origin=dataset_url, untar=True)
+    data_dir = pathlib.Path(data_dir)
+    batch_size = 32
+    img_height = 180
+    img_width = 180
 
-    def load_image_dataset(self) -> tuple:
-        train_butterfly_dir = os.path.join(self.train_dir, 'covid')
-        train_owl_dir = os.path.join(self.train_dir, 'nocovid')
-        validation_butterfly_dir = os.path.join(self.validation_dir, 'covid')
-        validation_owl_dir = os.path.join(self.validation_dir, 'nocovid')
+    def init(self, image_64: str):
+        print(self.data_dir)
+        image_count = len(list(self.data_dir.glob('*/*.png')))
+        print(image_count)
+        roses = list(self.data_dir.glob('banana/*'))
+        PIL.Image.open(str(roses[0]))
+        PIL.Image.open(str(roses[1]))
+        tulips = list(self.data_dir.glob('choclitos/*'))
+        PIL.Image.open(str(tulips[0]))
+        train_ds = self.train_dataset()
+        class_names = train_ds.class_names
+        val_ds = self.val_dataset()
+        print(class_names)
+        self.plot_figures(train_ds, class_names)
+        self.performance(train_ds, val_ds)
+        normalization_layer = layers.experimental.preprocessing.Rescaling(1. / 255)
+        self.normalize_data(train_ds, normalization_layer)
+        model = self.create_model()
+        self.train(model, train_ds, val_ds)
+        self.predict(model, class_names, image_64)
 
-        num_butterfly_tr = len(os.listdir(train_butterfly_dir))
-        num_owl_tr = len(os.listdir(train_owl_dir))
+    def train_dataset(self):
+        train_ds = tf.keras.preprocessing.image_dataset_from_directory(
+            self.data_dir,
+            validation_split=0.2,
+            subset="training",
+            seed=123,
+            image_size=(self.img_height, self.img_width),
+            batch_size=self.batch_size)
+        return train_ds
 
-        num_butterfly_val = len(os.listdir(validation_butterfly_dir))
-        num_owl_val = len(os.listdir(validation_owl_dir))
+    def val_dataset(self):
+        val_ds = tf.keras.preprocessing.image_dataset_from_directory(
+            self.data_dir,
+            validation_split=0.2,
+            subset="validation",
+            seed=123,
+            image_size=(self.img_height, self.img_width),
+            batch_size=self.batch_size)
+        return val_ds
 
-        total_train = num_butterfly_tr + num_owl_tr
-        total_val = num_butterfly_val + num_owl_val
+    def plot_figures(self, train_ds, class_names):
+        plt.figure(figsize=(10, 10))
+        for images, labels in train_ds.take(1):
+            for i in range(9):
+                ax = plt.subplot(3, 3, i + 1)
+                plt.imshow(images[i].numpy().astype("uint8"))
+                plt.title(class_names[labels[i]])
+                plt.axis("off")
+                plt.show()
 
-        print('total training covid images:', num_butterfly_tr)
-        print('total training no-covid images:', num_owl_tr)
+    def performance(self, train_ds, val_ds):
+        AUTOTUNE = tf.data.AUTOTUNE
+        train_ds = train_ds.cache().shuffle(1000).prefetch(buffer_size=AUTOTUNE)
+        val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
-        print('total validation covid images:', num_butterfly_val)
-        print('total validation no-covid images:', num_owl_val)
-        print("--")
-        print("Total training images:", total_train)
-        print("Total validation images:", total_val)
-        return total_train, total_val
+    def normalize_data(self, train_ds, normalization_layer):
+        normalized_ds = train_ds.map(lambda x, y: (normalization_layer(x), y))
+        image_batch, labels_batch = next(iter(normalized_ds))
+        first_image = image_batch[0]
+        # Notice the pixels values are now in `[0,1]`.
+        print(np.min(first_image), np.max(first_image))
 
-    def image_pre_processing(self) -> tuple:
-        batch_size = 16  # Warning: batch_size < train_data
-        train_image_generator = ImageDataGenerator(rescale=1. / 255)  # Generator for our training data
-        validation_image_generator = ImageDataGenerator(rescale=1. / 255)  # Generator for our validation data
-        train_data_gen = train_image_generator.flow_from_directory(batch_size=batch_size,
-                                                                   directory=self.train_dir,
-                                                                   shuffle=True,
-                                                                   target_size=(self.IMG_HEIGHT, self.IMG_WIDTH),
-                                                                   class_mode='binary')
-        val_data_gen = validation_image_generator.flow_from_directory(batch_size=batch_size,
-                                                                      directory=self.validation_dir,
-                                                                      target_size=(self.IMG_HEIGHT, self.IMG_WIDTH),
-                                                                      class_mode='binary')
-        sample_training_images, _ = next(train_data_gen)
-        return train_data_gen, batch_size, sample_training_images, val_data_gen
+    def create_model(self):
+        num_classes = 5
 
-    def plot_images(self, images_arr):
-        fig, axes = plt.subplots(1, 5, figsize=(15, 15))
-        axes = axes.flatten()
-        for img, ax in zip(images_arr, axes):
-            ax.imshow(img)
-            ax.axis('off')
-        plt.tight_layout()
-        plt.show()
-
-    def setup_convolutional_neural_network(self):
         model = Sequential([
-            Conv2D(16, 3, padding='same', activation='relu', input_shape=(self.IMG_HEIGHT, self.IMG_WIDTH, 3)),
-            MaxPooling2D(),
-            Conv2D(32, 3, padding='same', activation='relu'),
-            MaxPooling2D(),
-            Conv2D(64, 3, padding='same', activation='relu'),
-            MaxPooling2D(),
-            Flatten(),
-            Dense(512, activation='relu'),
-            Dense(1)
+            layers.experimental.preprocessing.Rescaling(1. / 255, input_shape=(self.img_height, self.img_width, 3)),
+            layers.Conv2D(16, 3, padding='same', activation='relu'),
+            layers.MaxPooling2D(),
+            layers.Conv2D(32, 3, padding='same', activation='relu'),
+            layers.MaxPooling2D(),
+            layers.Conv2D(64, 3, padding='same', activation='relu'),
+            layers.MaxPooling2D(),
+            layers.Flatten(),
+            layers.Dense(128, activation='relu'),
+            layers.Dense(num_classes)
         ])
-
         model.compile(optimizer='adam',
-                      loss=tf.keras.losses.BinaryCrossentropy(from_logits=True),
+                      loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
                       metrics=['accuracy'])
 
-        model.summary()
+
         return model
 
-    def train_convolutional_neural_network(self, model, batch_size, train_data_gen, total_train, val_data_gen,
-                                           total_val):
-        history = model.fit_generator(
-            train_data_gen,
-            steps_per_epoch=total_train // batch_size,
-            epochs=self.epochs,
-            validation_data=val_data_gen,
-            validation_steps=total_val // batch_size
+    def train(self, model, train_ds, val_ds):
+        epochs = 10
+        history = model.fit(
+            train_ds,
+            validation_data=val_ds,
+            epochs=epochs
         )
-        acc = history.history['accuracy']
-        val_acc = history.history['val_accuracy']
-        loss = history.history['loss']
-        val_loss = history.history['val_loss']
-        epochs_range = range(self.epochs)
+        model.summary()
+
+    def predict(self, model, class_names, image_64):
+        sunflower_url = image_64.encode("ascii")
+        decoded = base64.decodebytes(sunflower_url)
+
+        imgdata = base64.b64decode(image_64)
+        filename = '/home/dcorrales/Descargas/some_image.jpg'  # I assume you have a way of picking unique filenames
+        with open(filename, 'wb') as f:
+            f.write(imgdata)
+
+        img = keras.preprocessing.image.load_img(
+            filename , target_size=(self.img_height, self.img_width)
+        )
+
+        img_array = keras.preprocessing.image.img_to_array(img)
+        img_array = tf.expand_dims(img_array, 0)  # Create a batch
+
+        predictions = model.predict(img_array)
+        score = tf.nn.softmax(predictions[0])
+
+        print(
+            "This image most likely belongs to {} with a {:.2f} percent confidence."
+                .format(class_names[np.argmax(score)], 100 * np.max(score))
+        )
