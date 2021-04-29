@@ -25,12 +25,6 @@ class TensorFlow:
     def init(self, image_64: str):
         print(self.data_dir)
         image_count = len(list(self.data_dir.glob('*/*.png')))
-        print(image_count)
-        roses = list(self.data_dir.glob('banana/*'))
-        PIL.Image.open(str(roses[0]))
-        PIL.Image.open(str(roses[1]))
-        tulips = list(self.data_dir.glob('choclitos/*'))
-        PIL.Image.open(str(tulips[0]))
         train_ds = self.train_dataset()
         class_names = train_ds.class_names
         val_ds = self.val_dataset()
@@ -41,7 +35,7 @@ class TensorFlow:
         self.normalize_data(train_ds, normalization_layer)
         model = self.create_model()
         self.train(model, train_ds, val_ds)
-        self.predict(model, class_names, image_64)
+        return self.predict(model, class_names, image_64)
 
     def train_dataset(self):
         train_ds = tf.keras.preprocessing.image_dataset_from_directory(
@@ -103,8 +97,6 @@ class TensorFlow:
         model.compile(optimizer='adam',
                       loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True),
                       metrics=['accuracy'])
-
-
         return model
 
     def train(self, model, train_ds, val_ds):
@@ -139,3 +131,17 @@ class TensorFlow:
             "This image most likely belongs to {} with a {:.2f} percent confidence."
                 .format(class_names[np.argmax(score)], 100 * np.max(score))
         )
+        return self._get_price_by_type(class_names[np.argmax(score)])
+
+    def _get_price_by_type(self, type_product: str):
+        product_list = {
+            "banana": {"name": "Banano", "price": 500, "description": "Delicioso para comer con galletas y leche", "stock": 5},
+            "choclitos": {"name": "Choclitos", "price": 1800, "description": "Para pasar un buen rato con los amigos", "stock": 160},
+            "nevera": {"name": "Nevera", "price": 900000, "description": "¡Manten tus productos a salvo!", "stock": 160},
+            "poker": {"name": "Cerveza Poker", "price": 1600, "description": "Descubre el sabor y frescura de Cerveza Poker, la mejor compañía para compartir momentos inolvidables entre amigos ", "stock": 5},
+            "silla": {"name": "Silla", "price": 100000,
+                      "description": "Sientate cómodo", "stock": 5}
+        }
+
+        return product_list.get(type_product)
+

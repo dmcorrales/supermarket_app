@@ -13,9 +13,8 @@ class Item(BaseModel):
 
 @router.post("/")
 async def index(item: Item) -> str:
-    val:str = item.item
-    tensor : TensorFlow = TensorFlow()
-    tensor.init(image_64=val)
-    return "OK!"
+    val: str = item.item
+    tensor: TensorFlow = TensorFlow()
+    return tensor.init(image_64=val)
 
 
